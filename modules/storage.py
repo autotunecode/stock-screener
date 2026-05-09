@@ -15,6 +15,20 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
 def _get_gcs_client():
     from google.cloud import storage
+    
+    # Streamlit CloudのSecretsから認証情報を取得できるか試行
+    try:
+        import streamlit as st
+        if "gcp_service_account" in st.secrets:
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"]
+            )
+            return storage.Client(credentials=credentials)
+    except Exception:
+        pass
+        
+    # ローカル（環境変数 GOOGLE_APPLICATION_CREDENTIALS）を使う場合
     return storage.Client()
 
 
