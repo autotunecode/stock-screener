@@ -1,0 +1,11 @@
+streamlit>=1.36.0
+pandas>=2.0.0
+numpy
+yfinance>=0.2.18
+plotly>=5.14.0
+python-dotenv>=1.0.0
+google-genai
+pdfplumber
+google-cloud-storage
+openpyxl
+xlrd>=2.0.1
