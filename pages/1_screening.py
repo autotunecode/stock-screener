@@ -385,6 +385,9 @@ if not filtered_df.empty:
     selected_ticker = selected_ticker_name.split(" - ")[0]
     target_data = df[df['Ticker'] == selected_ticker].iloc[0]
 
+    # yfinance用にティッカーを加工（日本株の場合は .T を付与）
+    yf_ticker = selected_ticker if selected_ticker.endswith('.T') else f"{selected_ticker}.T"
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -451,9 +454,11 @@ if not filtered_df.empty:
         st.subheader("過去5年の株価推移")
         with st.spinner("株価データを取得中..."):
             try:
-                hist_data = yf.Ticker(selected_ticker).history(period="5y")
-                if not hist_data.empty:
-                    st.line_chart(hist_data['Close'])
+                hist_data = yf.Ticker(yf_ticker).history(period="5y")
+                # NaNデータを除外してチャート描画時の「Infinite extent」警告を防ぐ
+                valid_data = hist_data['Close'].dropna()
+                if not valid_data.empty:
+                    st.line_chart(valid_data)
                 else:
                     st.write("過去の株価データが取得できませんでした。")
             except Exception as e:
