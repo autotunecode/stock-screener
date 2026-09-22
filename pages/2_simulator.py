@@ -66,7 +66,15 @@ with st.sidebar:
     )
 
     with st.form("create_strategy_form", clear_on_submit=True):
-        new_strat_name = st.text_input("戦略名 (例: 高ROE・割安株)")
+        meta = st.session_state.get("screened_metadata", {}) if has_screened else {}
+        filter_label = meta.get("filter_label", "")
+        hint_name = f"総合評価{filter_label}戦略" if filter_label else "高ROE・割安株"
+
+        new_strat_name = st.text_input(
+            "戦略名",
+            placeholder=f"例: {hint_name}",
+            help="この戦略の名称を入力してください。"
+        )
         options_cash = [i * 1000000 for i in range(1, 101)]
         new_strat_cash = st.selectbox("初期資金", options=options_cash, index=0,
                                        format_func=lambda x: f"{x // 10000}万円")
@@ -76,7 +84,9 @@ with st.sidebar:
             uploaded_csv = st.file_uploader("対象銘柄リスト(CSV)をアップロード", type=["csv"])
         elif has_screened:
             count = len(st.session_state["screened_stocks"])
-            st.info(f"スクリーニング結果から {count} 銘柄を使用します。")
+            cond_str = f"（条件: {filter_label}）" if filter_label else ""
+            st.info(f"🎯 スクリーニング結果{cond_str}から {count} 銘柄を使用します。")
+
 
         submit_create = st.form_submit_button("作成する")
         if submit_create:
@@ -127,7 +137,10 @@ with st.sidebar:
 if not active_strategy_name:
     st.info("👈 左のサイドバーから「新規戦略」を作成してください。")
     if has_screened:
-        st.success(f"スクリーニングページから {len(st.session_state['screened_stocks'])} 銘柄が登録済みです。サイドバーから戦略を作成できます。")
+        meta = st.session_state.get("screened_metadata", {})
+        filter_label = meta.get("filter_label", "")
+        cond_str = f"（条件: {filter_label}）" if filter_label else ""
+        st.success(f"スクリーニングページから {len(st.session_state['screened_stocks'])} 銘柄{cond_str}が登録済みです。サイドバーから戦略を作成できます。")
     st.stop()
 
 # 現在選択されている戦略データの取得

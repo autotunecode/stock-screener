@@ -45,53 +45,94 @@ def calc_completeness(row):
     return round(present / len(KEY_METRICS) * 100)
 
 
-def calc_comprehensive_rating(row):
-    """100点満点でスコアを算出し、A〜Dの総合評価とスコアを文字列で返す"""
-    score = 0
+def calc_comprehensive_score(row):
+    """銘柄データから100点満点の総合スコア（整数値）を算出する。
 
-    # 1. データ充足度 (最大20点)
-    comp_rate = row.get('データ充足率(%)', 0)
-    score += (comp_rate * 0.2)
+    引数:
+        row (pd.Series): 銘柄の各指標データを含む行
 
-    # 2. 割安度・アップサイド (最大25点)
-    upside = row.get('アップサイド(%)', 0)
-    if pd.notnull(upside):
-        if upside >= 100: score += 25
-        elif upside >= 50: score += 15
-        elif upside >= 20: score += 10
+    戻り値:
+        int: 0〜100の総合スコア
+    """
+    try:
+        score = 0.0
 
-    # 3. 稼ぐ力・ROE (最大20点)
-    roe = row.get('ROE(%)', 0)
-    if pd.notnull(roe):
-        if roe >= 15: score += 20
-        elif roe >= 10: score += 15
-        elif roe >= 8: score += 10
+        # 1. データ充足度 (最大20点)
+        comp_rate = row.get('データ充足率(%)', 0)
+        if pd.notnull(comp_rate):
+            score += float(comp_rate) * 0.2
 
-    # 4. 成長性 (最大20点)
-    rev_growth = row.get('売上高成長率(%)', 0)
-    if pd.notnull(rev_growth):
-        if rev_growth >= 20: score += 20
-        elif rev_growth >= 10: score += 15
-        elif rev_growth >= 5: score += 10
+        # 2. 割安度・アップサイド (最大25点)
+        upside = row.get('アップサイド(%)', 0)
+        if pd.notnull(upside):
+            if upside >= 100:
+                score += 25
+            elif upside >= 50:
+                score += 15
+            elif upside >= 20:
+                score += 10
 
-    # 5. 安全性 (最大15点)
-    equity_ratio = row.get('自己資本比率(%)', 0)
-    if pd.notnull(equity_ratio):
-        if equity_ratio >= 50: score += 15
-        elif equity_ratio >= 30: score += 10
+        # 3. 稼ぐ力・ROE (最大20点)
+        roe = row.get('ROE(%)', 0)
+        if pd.notnull(roe):
+            if roe >= 15:
+                score += 20
+            elif roe >= 10:
+                score += 15
+            elif roe >= 8:
+                score += 10
 
-    score = int(score)
+        # 4. 成長性 (最大20点)
+        rev_growth = row.get('売上高成長率(%)', 0)
+        if pd.notnull(rev_growth):
+            if rev_growth >= 20:
+                score += 20
+            elif rev_growth >= 10:
+                score += 15
+            elif rev_growth >= 5:
+                score += 10
 
-    if score >= 80:
-        grade = "A"
-    elif score >= 60:
-        grade = "B"
-    elif score >= 40:
-        grade = "C"
-    else:
-        grade = "D"
+        # 5. 安全性 (最大15点)
+        equity_ratio = row.get('自己資本比率(%)', 0)
+        if pd.notnull(equity_ratio):
+            if equity_ratio >= 50:
+                score += 15
+            elif equity_ratio >= 30:
+                score += 10
 
-    return f"{grade} ({score}点)"
+        return int(min(max(score, 0), 100))
+    except Exception:
+        return 0
+
+
+def calc_comprehensive_rating(score_or_row):
+    """総合スコアまたは行データからA〜Dの総合評価とスコア文字列を生成する。
+
+    引数:
+        score_or_row (int | float | pd.Series): 総合スコア数値または銘柄行データ
+
+    戻り値:
+        str: "A (100点)" などの総合評価判定文字列
+    """
+    try:
+        if hasattr(score_or_row, 'get'):
+            score = calc_comprehensive_score(score_or_row)
+        else:
+            score = int(score_or_row)
+
+        if score >= 80:
+            grade = "A"
+        elif score >= 60:
+            grade = "B"
+        elif score >= 40:
+            grade = "C"
+        else:
+            grade = "D"
+
+        return f"{grade} ({score}点)"
+    except Exception:
+        return "D (0点)"
+
 
 
 def style_dataframe(df):
@@ -261,13 +302,14 @@ if exclude_deficit:
 filtered_df = filtered_df.copy()
 if not filtered_df.empty:
     filtered_df['データ充足率(%)'] = filtered_df.apply(calc_completeness, axis=1)
+    # 総合スコア（0〜100の整数）と総合評価判定（グレード表記文字列）を追加
+    filtered_df['総合スコア'] = filtered_df.apply(calc_comprehensive_score, axis=1)
+    filtered_df['総合評価判定'] = filtered_df['総合スコア'].apply(calc_comprehensive_rating)
+    # デフォルトで総合スコア降順、データ充足率降順にソート
+    filtered_df = filtered_df.sort_values(by=['総合スコア', 'データ充足率(%)'], ascending=[False, False])
 else:
     filtered_df['データ充足率(%)'] = pd.Series(dtype=float)
-
-# --- 総合評価判定列を追加 ---
-if not filtered_df.empty:
-    filtered_df['総合評価判定'] = filtered_df.apply(calc_comprehensive_rating, axis=1)
-else:
+    filtered_df['総合スコア'] = pd.Series(dtype=int)
     filtered_df['総合評価判定'] = pd.Series(dtype=str)
 
 # 総合評価判定カラムをTickerの次(見やすい位置)に移動
@@ -276,30 +318,124 @@ if '総合評価判定' in cols:
     cols.insert(2, cols.pop(cols.index('総合評価判定')))
     filtered_df = filtered_df[cols]
 
-# --- 結果ヘッダー ---
-col_res1, col_res2, col_res3 = st.columns([2, 1, 1.2])
+# --- 総合評価スコアによる抽出フィルター ---
+display_df = filtered_df.copy()
+filter_summary_label = "全件"
+
+if not filtered_df.empty:
+    score_100_count = len(filtered_df[filtered_df['総合スコア'] == 100])
+    score_90_count = len(filtered_df[filtered_df['総合スコア'] >= 90])
+    score_80_count = len(filtered_df[filtered_df['総合スコア'] >= 80])
+
+    st.markdown("---")
+    st.subheader("🎯 総合評価スコアによる抽出・絞り込み")
+
+    col_filter_mode, col_filter_detail = st.columns([1.8, 2.2])
+
+    with col_filter_mode:
+        filter_mode = st.radio(
+            "抽出条件の選択",
+            options=[
+                f"すべて表示 ({len(filtered_df)}件)",
+                f"100点満点のみ ({score_100_count}件)",
+                f"90点以上 ({score_90_count}件)",
+                f"80点以上・A判定 ({score_80_count}件)",
+                "指定スコア以上（スライダー）",
+                "特定の点数を個別選択"
+            ],
+            index=0,
+            help="総合評価判定のスコアによって銘柄を絞り込み、シミュレーター用への一括登録や詳細分析ができます。"
+        )
+
+    with col_filter_detail:
+        if "100点満点のみ" in filter_mode:
+            display_df = filtered_df[filtered_df['総合スコア'] == 100]
+            filter_summary_label = "100点満点"
+            if score_100_count > 0:
+                st.success(f"🏆 総合評価が100点満点の銘柄が {score_100_count} 件抽出されました。このまま下のボタンからシミュレーターへ登録できます。")
+            else:
+                st.info("💡 現在のスクリーニング条件に合致する100点満点の銘柄はありません。スクリーニング条件を緩和するか他の条件をお選びください。")
+        elif "90点以上" in filter_mode:
+            display_df = filtered_df[filtered_df['総合スコア'] >= 90]
+            filter_summary_label = "90点以上"
+            st.info(f"✨ 総合評価90点以上の優秀銘柄: {len(display_df)} 件")
+        elif "80点以上" in filter_mode:
+            display_df = filtered_df[filtered_df['総合スコア'] >= 80]
+            filter_summary_label = "80点以上 (A判定)"
+            st.info(f"🏅 A判定（80点以上）の銘柄: {len(display_df)} 件")
+        elif "指定スコア以上" in filter_mode:
+            slider_score = st.slider(
+                "抽出する最低総合スコア (点)",
+                min_value=0,
+                max_value=100,
+                value=80,
+                step=5,
+                help="指定した点数以上の銘柄のみを抽出します。"
+            )
+            display_df = filtered_df[filtered_df['総合スコア'] >= slider_score]
+            filter_summary_label = f"{slider_score}点以上"
+            st.caption(f"スコア {slider_score} 点以上の銘柄: {len(display_df)} 件 / 全体 {len(filtered_df)} 件")
+        elif "特定の点数を個別選択" in filter_mode:
+            available_scores = sorted(filtered_df['総合スコア'].unique().tolist(), reverse=True)
+            default_selection = [100] if 100 in available_scores else ([available_scores[0]] if available_scores else [])
+            selected_scores = st.multiselect(
+                "抽出するスコアを選択（複数選択可）",
+                options=available_scores,
+                default=default_selection,
+                format_func=lambda s: f"{s}点 ({len(filtered_df[filtered_df['総合スコア'] == s])}件)"
+            )
+            if selected_scores:
+                display_df = filtered_df[filtered_df['総合スコア'].isin(selected_scores)]
+                score_tags = ", ".join(f"{s}点" for s in selected_scores)
+                filter_summary_label = f"指定点数 ({score_tags})"
+            else:
+                display_df = filtered_df.iloc[0:0]
+                filter_summary_label = "未選択"
+                st.warning("スコアを1つ以上選択してください。")
+        else:
+            display_df = filtered_df
+            filter_summary_label = "全件"
+
+# --- 結果ヘッダー & アクション ---
+col_res1, col_res2, col_res3 = st.columns([2, 1, 1.3])
 with col_res1:
-    st.subheader(f"スクリーニング結果: {len(filtered_df)} 件")
+    if filter_summary_label == "全件":
+        st.subheader(f"スクリーニング結果: {len(display_df)} 件")
+    else:
+        st.subheader(f"抽出結果 ({filter_summary_label}): {len(display_df)} 件")
+        st.caption(f"※ スクリーニング合致全体: {len(filtered_df)} 件")
+
 with col_res2:
-    csv_data = filtered_df.to_csv(index=False).encode('utf-8-sig')
+    csv_data = display_df.to_csv(index=False).encode('utf-8-sig')
+    download_filename = "screened_stocks_100pts.csv" if filter_summary_label == "100点満点" else "screened_stocks.csv"
     st.download_button(
-        label="📥 結果をCSVでダウンロード",
+        label=f"📥 抽出結果をCSV出力 ({len(display_df)}件)",
         data=csv_data,
-        file_name="screened_stocks.csv",
+        file_name=download_filename,
         mime="text/csv",
+        disabled=display_df.empty,
+        use_container_width=True
     )
+
 with col_res3:
-    if st.button("📈 シミュレーター用に登録", use_container_width=True):
-        if not filtered_df.empty:
-            # フィルタ済みデータから直接リストを構築（現在表示中の結果のみ）
+    reg_btn_label = f"📈 シミュレーター用に登録 ({len(display_df)}件)"
+    if st.button(reg_btn_label, use_container_width=True, disabled=display_df.empty):
+        if not display_df.empty:
+            # 抽出された銘柄リストを登録
             screened_stocks = [
                 {"Ticker": str(t), "Name": str(n)}
-                for t, n in zip(filtered_df['Ticker'].tolist(), filtered_df['Name'].tolist())
+                for t, n in zip(display_df['Ticker'].tolist(), display_df['Name'].tolist())
             ]
             st.session_state["screened_stocks"] = screened_stocks
-            st.success(f"スクリーニング結果 {len(filtered_df)} 件中 {len(screened_stocks)} 銘柄をシミュレーター用に登録しました。「シミュレーター」ページで戦略を作成してください。")
+            st.session_state["screened_metadata"] = {
+                "filter_label": filter_summary_label,
+                "count": len(screened_stocks),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            st.success(f"総合評価「{filter_summary_label}」の銘柄 {len(screened_stocks)} 件をシミュレーター用に登録しました。「シミュレーター」ページで戦略を作成してください。")
         else:
-            st.warning("登録できる銘柄がありません。フィルタ条件を緩和してください。")
+            st.warning("登録できる銘柄がありません。")
+
 
 # --- データ品質ダッシュボード ---
 with st.expander("📊 データ品質ダッシュボード — スクリーニング結果の信頼性", expanded=False):
@@ -364,22 +500,28 @@ with st.expander("📊 データ品質ダッシュボード — スクリーニ�
 """)
 
 st.caption("※ アップサイド50%以上(赤)、PBR 1倍以下(緑)、ROE 15%以上(黄)、成長率10%超え(青) はハイライトされます。「データ充足率」列も緑(高)・赤(低)で色分けされています。")
-st.dataframe(style_dataframe(filtered_df), use_container_width=True, hide_index=True)
+if not display_df.empty:
+    st.dataframe(style_dataframe(display_df), use_container_width=True, hide_index=True)
+else:
+    st.warning("⚠️ 選択したスコア条件に該当する銘柄はありません。上の「総合評価スコアによる抽出・絞り込み」またはサイドバーのスクリーニング条件を変更してください。")
 
 st.markdown("---")
 
 # --- 詳細分析機能 ---
 st.header("🔍 銘柄詳細分析 & バリュートラップ判定")
 
-if not filtered_df.empty:
+analysis_target_df = display_df if not display_df.empty else filtered_df
+
+if not analysis_target_df.empty:
     try:
         import yfinance as yf
     except ImportError:
         yf = None
 
+    analysis_label = f"分析する銘柄を選択してください（対象: {filter_summary_label} {len(analysis_target_df)}件）"
     selected_ticker_name = st.selectbox(
-        "分析する銘柄を選択してください",
-        options=filtered_df.apply(lambda row: f"{row['Ticker']} - {row['Name']}", axis=1).tolist()
+        analysis_label,
+        options=analysis_target_df.apply(lambda row: f"{row['Ticker']} - {row['Name']}", axis=1).tolist()
     )
 
     selected_ticker = selected_ticker_name.split(" - ")[0]
